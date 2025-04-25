@@ -25,9 +25,9 @@ IGNORE_EXTENSIONS = {
 }
 
 MAX_FILE_SIZE = 100_000  # 100 KB maximum file size
-DEFAULT_MAX_PROMPT_LENGTH = 3000  # Maximum characters allowed in prompt parts
+DEFAULT_MAX_PROMPT_LENGTH = 10000  # Maximum characters allowed in prompt parts
 
-def trim_text(text, max_chars=2000):
+def trim_text(text, max_chars=10000):
     """Trims the text if it exceeds max_chars."""
     if len(text) > max_chars:
         return text[:max_chars] + "\n\n... (truncated)"
@@ -52,7 +52,7 @@ def summarize_file(filepath, max_lines=20):
     except Exception as e:
         return f"Error reading file: {e}"
     summary = "\n".join(summary_lines)
-    return trim_text(summary, max_chars=500)
+    return trim_text(summary, max_chars=10000)
 
 # ----------------------------
 # Language-Specific Analysis
