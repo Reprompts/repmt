@@ -1,11 +1,13 @@
 # 🔍 Repmt - Repository Prompt Generator for Python Projects
-
+![Downloads](https://static.pepy.tech/badge/repmt/month) 
 [![PyPI Version](https://img.shields.io/pypi/v/repmt)](https://pypi.org/project/repmt/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python Versions](https://img.shields.io/pypi/pyversions/repmt)](https://pypi.org/project/repmt/)
 [![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 **Repmt** is a lightweight tool that analyzes Python repositories and generates **static, structured prompts** — ideal for technical documentation, AI prompt engineering, onboarding new developers, and building intelligent agents. 
+
+Check the Library on Pypi: https://pypi.org/project/repmt/
 
 It provides a **Streamlit-powered UI** to let users select specific files, modules, or directories and generate meaningful, formatted prompts from them.
 
@@ -25,10 +27,13 @@ It provides a **Streamlit-powered UI** to let users select specific files, modul
 ## 📦 Installation
 
 ```bash
-pip install repmt
-🖥️ Launch the Streamlit UI
 
+pip install repmt
+
+🖥️ Launch the Streamlit UI
 repmt
+
+
 You will be prompted to:
 
 Select a directory or Python project to analyze
