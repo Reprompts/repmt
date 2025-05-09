@@ -70,14 +70,36 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown("""
+st.markdown(
+"""
 This tool analyzes the repository in the current directory and generates various prompts for GPT.
 It automatically ignores virtual environments and dependency folders.
 """)
 
+# Optional GitHub URL input and validation
+with st.sidebar:
+    st.markdown("### 🔗 GitHub Repository Validation")
+    github_url = st.text_input(
+        "Enter GitHub repo URL (optional):",
+        placeholder="https://github.com/user/repo.git",
+        key="github_url_input"
+    )
+    if github_url:
+        if st.button("Validate Repository", key="validate_repo_btn"):
+            with st.spinner("🔄 Validating GitHub repository URL..."):
+                accessible = backend.check_repo_accessibility(github_url)
+            if accessible:
+                st.success("✅ Repository URL is valid and accessible.")
+            else:
+                st.error("❌ Cannot access the repository. Please check the URL or your network.")
+
 # Repository path display
 repo_path = os.getcwd()
 st.info(f"**Analyzing repository at:** `{repo_path}`")
+
+# Before scanning, if a GitHub URL was provided and not accessible, stop further analysis
+if github_url and not backend.check_repo_accessibility(github_url):
+    st.stop()
 
 # Analysis spinner with custom message
 with st.spinner("🔍 Scanning repository structure..."):
@@ -88,7 +110,7 @@ with st.spinner("🔍 Scanning repository structure..."):
 st.subheader("📂 Directory Structure")
 st.code(repo_structure, language="bash")
 
-# Sidebar with improved styling
+# Sidebar with improved styling and prompt options
 with st.sidebar:
     st.markdown("### ⚙️ Analysis Options")
     prompt_option = st.selectbox(
@@ -106,15 +128,12 @@ with st.sidebar:
     if prompt_option == "Module Specific Prompt":
         st.markdown("---")
         st.markdown("### 🗂 Module Selection")
-        
         with st.expander("Repository Structure", expanded=True):
             for module_path in sorted(repo_analysis.keys()):
                 display_name = module_path.replace(repo_path, '').lstrip('/\\')
-                if st.checkbox(display_name, key=f"module_{module_path}"):
-                    if 'selected_modules' not in st.session_state:
-                        st.session_state.selected_modules = []
-                    if module_path not in st.session_state.selected_modules:
-                        st.session_state.selected_modules.append(module_path)
+                checked = st.checkbox(display_name, key=f"module_{module_path}")
+                if checked:
+                    st.session_state.setdefault('selected_modules', []).append(module_path)
                 else:
                     if 'selected_modules' in st.session_state and module_path in st.session_state.selected_modules:
                         st.session_state.selected_modules.remove(module_path)
@@ -130,7 +149,7 @@ elif prompt_option == "Code Flow":
 elif prompt_option == "Structure Understanding":
     generated_prompt = prompt_generator.generate_structure_prompt(repo_structure, repo_analysis)
 elif prompt_option == "Module Specific Prompt":
-    if 'selected_modules' in st.session_state and st.session_state.selected_modules:
+    if st.session_state.get('selected_modules'):
         generated_prompt = prompt_generator.generate_module_prompt(
             st.session_state.selected_modules, 
             repo_structure, 
@@ -139,7 +158,6 @@ elif prompt_option == "Module Specific Prompt":
     else:
         st.warning("⚠️ Please select at least one module from the repository structure")
 elif prompt_option == "Search for Issue":
-    # New section for issue search
     st.markdown("### 🔎 Search for Issue")
     issue_description = st.text_area(
         "Describe the issue you're looking for:",
@@ -147,8 +165,6 @@ elif prompt_option == "Search for Issue":
         height=100,
         key="issue_description"
     )
-    
-    # Generate prompt button moved below the text area
     if st.button("Generate Prompt", key="generate_issue_prompt", type="primary", 
                 help="Click to generate prompt based on the issue description",
                 use_container_width=True,
@@ -162,13 +178,10 @@ elif prompt_option == "Search for Issue":
 # Display generated prompt
 if generated_prompt:
     st.subheader("📝 Generated Prompt")
-    
-    # Add copy button with updated clipboard functionality
     if st.button("📋 Copy Prompt", key="copy_button", help="Click to copy prompt to clipboard"):
         st.query_params.copy_prompt = True
         st.write('<script>navigator.clipboard.writeText(`' + generated_prompt.replace('`', '\`') + '`);</script>', unsafe_allow_html=True)
         st.success("Prompt copied to clipboard!")
-    
     st.text_area(
         "Prompt Content",
         generated_prompt,
