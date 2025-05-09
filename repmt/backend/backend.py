@@ -3,20 +3,19 @@
 
 import os
 import ast
-import fnmatch  # To support wildcard matching
+import fnmatch
+from typing import List, Dict, Union
 
 # ----------------------------
-# Configuration for Ignored Items and File Limits
+# Configuration
 # ----------------------------
+
 IGNORE_FOLDERS = {
     'node_modules', '.git', '.venv', 'venv', 'env',
     '__pycache__', '.mypy_cache', 'dist', 'build',
     '.next', 'Pods', 'Carthage', 'DerivedData', 'target',
-    'repmt.egg-info'   # <-- Now ignored.
+    'repmt.egg-info'
 }
-
-def is_virtual_env(directory):
-    return os.path.exists(os.path.join(directory, "pyvenv.cfg"))
 
 IGNORE_EXTENSIONS = {
     '.pyc', '.class', '.jar', '.so', '.dll', '.exe', '.o',
@@ -24,100 +23,94 @@ IGNORE_EXTENSIONS = {
     '.sqlite', '.ico', '.ttf', '.woff', '.pdf', '.min.js', '.map'
 }
 
-MAX_FILE_SIZE = 100_000  # 100 KB maximum file size
-DEFAULT_MAX_PROMPT_LENGTH = 10000  # Maximum characters allowed in prompt parts
-
-def trim_text(text, max_chars=10000):
-    """Trims the text if it exceeds max_chars."""
-    if len(text) > max_chars:
-        return text[:max_chars] + "\n\n... (truncated)"
-    return text
+MAX_FILE_SIZE = 100_000  # 100 KB
+DEFAULT_MAX_PROMPT_LENGTH = 10000
 
 # ----------------------------
-# File Summarization Functions
+# Utility Functions
 # ----------------------------
-def summarize_file(filepath, max_lines=20):
-    """
-    Reads the first `max_lines` of a text file and returns a summary.
-    If the file cannot be decoded as text, returns a note that it is binary.
-    """
-    summary_lines = []
+
+def is_virtual_env(directory: str) -> bool:
+    """Checks if a directory is a Python virtual environment."""
+    return os.path.exists(os.path.join(directory, "pyvenv.cfg"))
+
+def trim_text(text: str, max_chars: int = DEFAULT_MAX_PROMPT_LENGTH) -> str:
+    """Trims text to a specified max character limit."""
+    return text[:max_chars] + "\n\n... (truncated)" if len(text) > max_chars else text
+
+# ----------------------------
+# File Summarization
+# ----------------------------
+
+def summarize_file(filepath: str, max_lines: int = 20) -> str:
+    """Reads up to `max_lines` from a file to summarize its content."""
+    lines = []
     try:
-        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
-            for i in range(max_lines):
-                line = f.readline()
+        with open(filepath, "r", encoding="utf-8", errors="replace") as file:
+            for _ in range(max_lines):
+                line = file.readline()
                 if not line:
                     break
-                summary_lines.append(line.rstrip())
+                lines.append(line.rstrip())
+        return trim_text("\n".join(lines))
     except Exception as e:
         return f"Error reading file: {e}"
-    summary = "\n".join(summary_lines)
-    return trim_text(summary, max_chars=10000)
 
 # ----------------------------
-# Language-Specific Analysis
+# Python-Specific Analysis
 # ----------------------------
-def analyze_python_file(filepath):
+
+def analyze_python_file(filepath: str) -> Dict[str, Union[List[str], str]]:
     """
-    Uses AST to extract defined functions, classes, and imported libraries from a Python file.
-    Returns a dictionary with keys: 'functions', 'classes', 'imports'.
+    Uses AST to extract functions, classes, and imports from a Python file.
+    Returns dictionary with keys: functions, classes, imports (or error).
     """
     analysis = {"functions": [], "classes": [], "imports": []}
     try:
         with open(filepath, "r", encoding="utf-8") as file:
-            file_content = file.read()
-            tree = ast.parse(file_content, filename=filepath)
+            tree = ast.parse(file.read(), filename=filepath)
             for node in ast.walk(tree):
                 if isinstance(node, ast.FunctionDef):
                     analysis["functions"].append(node.name)
                 elif isinstance(node, ast.ClassDef):
                     analysis["classes"].append(node.name)
                 elif isinstance(node, ast.Import):
-                    for alias in node.names:
-                        analysis["imports"].append(alias.name)
-                elif isinstance(node, ast.ImportFrom):
-                    if node.module:
-                        analysis["imports"].append(node.module)
+                    analysis["imports"].extend(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    analysis["imports"].append(node.module)
     except Exception as e:
         analysis["error"] = f"Error analyzing file: {e}"
     return analysis
 
 # ----------------------------
-# Repository Scanning
+# Directory Scanning
 # ----------------------------
-def get_directory_structure(root_dir):
-    """
-    Recursively builds a string representation of the directory structure,
-    ignoring dependency folders and virtual environments.
-    """
-    structure_lines = []
+
+def get_directory_structure(root_dir: str) -> str:
+    """Returns string representation of the directory tree, skipping ignored folders."""
+    lines = []
     for dirpath, dirnames, filenames in os.walk(root_dir):
-        # Filter out ignored folders and virtual environments.
         dirnames[:] = [
-            d for d in dirnames 
+            d for d in dirnames
             if d not in IGNORE_FOLDERS and not is_virtual_env(os.path.join(dirpath, d))
         ]
         level = dirpath.replace(root_dir, "").count(os.sep)
         indent = " " * 4 * level
-        structure_lines.append(f"{indent}{os.path.basename(dirpath)}/")
+        lines.append(f"{indent}{os.path.basename(dirpath)}/")
         subindent = " " * 4 * (level + 1)
         for f in filenames:
-            structure_lines.append(f"{subindent}{f}")
-    full_structure = "\n".join(structure_lines)
-    return trim_text(full_structure, max_chars=DEFAULT_MAX_PROMPT_LENGTH)
+            lines.append(f"{subindent}{f}")
+    return trim_text("\n".join(lines))
 
-def scan_repo(repo_path):
+def scan_repo(repo_path: str) -> Dict[str, Union[str, Dict]]:
     """
-    Scans the repository for code files and extracts analysis or summary info.
-    Skips files with ignored extensions, files that are too large, and those in virtual environments.
-    For Python files, uses AST analysis; for others, uses a first-N-lines summary.
-    Returns a dictionary mapping relative file paths to analysis/summary.
+    Scans the repository and summarizes or analyzes each file.
+    Python files are analyzed; others are summarized (up to size limit).
     """
-    repo_analysis = {}
+    result = {}
     for dirpath, dirnames, filenames in os.walk(repo_path):
-        # Exclude ignored directories and virtual environments.
         dirnames[:] = [
-            d for d in dirnames 
+            d for d in dirnames
             if d not in IGNORE_FOLDERS and not is_virtual_env(os.path.join(dirpath, d))
         ]
         for file in filenames:
@@ -128,52 +121,59 @@ def scan_repo(repo_path):
             rel_path = os.path.relpath(full_path, repo_path)
             try:
                 if os.path.getsize(full_path) > MAX_FILE_SIZE:
-                    summary = "File too large to process."
+                    result[rel_path] = "File too large to process."
+                elif ext == ".py":
+                    result[rel_path] = analyze_python_file(full_path)
                 else:
-                    if ext == ".py":
-                        summary = analyze_python_file(full_path)
-                    else:
-                        summary = summarize_file(full_path)
-                repo_analysis[rel_path] = summary
+                    result[rel_path] = summarize_file(full_path)
             except Exception as e:
-                repo_analysis[rel_path] = f"Error processing file: {e}"
-    return repo_analysis
+                result[rel_path] = f"Error processing file: {e}"
+    return result
 
-def aggregate_imports(repo_analysis):
-    """
-    Aggregates a unique list of libraries imported in Python files within the repository.
-    """
+# ----------------------------
+# Repository-Wide Utilities
+# ----------------------------
+
+def aggregate_imports(repo_analysis: Dict[str, Union[str, Dict]]) -> List[str]:
+    """Returns a unique list of all Python imports found in the repo analysis."""
     imports = set()
-    for analysis in repo_analysis.values():
-        if isinstance(analysis, dict) and "imports" in analysis:
-            for imp in analysis.get("imports", []):
-                imports.add(imp)
-    return list(imports)
+    for data in repo_analysis.values():
+        if isinstance(data, dict) and "imports" in data:
+            imports.update(data.get("imports", []))
+    return sorted(imports)
 
 # ----------------------------
-# Filtering with Include/Exclude (Wildcard Support)
+# Filtering
 # ----------------------------
-def filter_repo_analysis(repo_analysis, include_list=None, exclude_list=None):
+
+def filter_repo_analysis(
+    repo_analysis: Dict[str, Union[str, Dict]],
+    include_list: List[str] = None,
+    exclude_list: List[str] = None
+) -> Dict[str, Union[str, Dict]]:
     """
-    Filters repo_analysis:
-      - If include_list is provided, only files whose path matches one of the glob patterns are kept.
-      - Files matching any pattern in exclude_list are removed.
+    Filters repo_analysis by include/exclude lists (wildcard support).
+    Returns a filtered dictionary.
     """
     filtered = {}
     for path, data in repo_analysis.items():
-        if exclude_list and any(fnmatch.fnmatch(path.lower(), ex.lower()) for ex in exclude_list):
+        path_lower = path.lower()
+        if exclude_list and any(fnmatch.fnmatch(path_lower, ex.lower()) for ex in exclude_list):
             continue
-        if include_list and not any(fnmatch.fnmatch(path.lower(), inc.lower()) for inc in include_list):
+        if include_list and not any(fnmatch.fnmatch(path_lower, inc.lower()) for inc in include_list):
             continue
         filtered[path] = data
     return filtered
 
-def build_directory_structure_from_analysis(repo_analysis):
-    """
-    Builds a directory tree (as a string) from the keys of repo_analysis.
-    """
+# ----------------------------
+# Directory Tree Builder (from Analysis)
+# ----------------------------
+
+def build_directory_structure_from_analysis(repo_analysis: Dict[str, Union[str, Dict]]) -> str:
+    """Builds a textual directory tree from keys in repo_analysis."""
     tree = {}
-    for path in repo_analysis.keys():
+
+    for path in repo_analysis:
         parts = path.split(os.sep)
         node = tree
         for i, part in enumerate(parts):
@@ -181,14 +181,17 @@ def build_directory_structure_from_analysis(repo_analysis):
                 node.setdefault("_files", []).append(part)
             else:
                 node = node.setdefault(part, {})
+
     lines = []
-    def build_lines(node, indent=0):
+
+    def build_lines(node: dict, indent: int = 0):
         for key in sorted(node.keys()):
             if key == "_files":
                 for f in sorted(node[key]):
                     lines.append(" " * 4 * indent + f)
             else:
                 lines.append(" " * 4 * indent + key + "/")
-                build_lines(node[key], indent+1)
+                build_lines(node[key], indent + 1)
+
     build_lines(tree)
     return "\n".join(lines)
